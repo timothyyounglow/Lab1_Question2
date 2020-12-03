@@ -15,6 +15,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 
 #include "driver/gpio.h"
 
@@ -40,27 +41,34 @@ static const char *TAG = "main";
  *
  */
 
-#define GPIO_OUTPUT_IO_0    15
-#define GPIO_OUTPUT_IO_1    16
-#define GPIO_OUTPUT_PIN_SEL  ((1ULL<<GPIO_OUTPUT_IO_0) | (1ULL<<GPIO_OUTPUT_IO_1))
-#define GPIO_INPUT_IO_0     4
-#define GPIO_INPUT_IO_1     5
-#define GPIO_INPUT_PIN_SEL  ((1ULL<<GPIO_INPUT_IO_0) | (1ULL<<GPIO_INPUT_IO_1))
 
-static xQueueHandle gpio_evt_queue = NULL;
+// Changed pin number below to 2
+#define GPIO_OUTPUT_IO_0    2
+//#define GPIO_OUTPUT_IO_1    16
+#define GPIO_OUTPUT_PIN_SEL  (1ULL<<GPIO_OUTPUT_IO_0)
+// Changed pin number below to 0
+#define GPIO_INPUT_IO_0     0
+//#define GPIO_INPUT_IO_1     5
+#define GPIO_INPUT_PIN_SEL  (1ULL<<GPIO_INPUT_IO_0)
 
-static void gpio_isr_handler(void *arg)
+//static xQueueHandle gpio_evt_queue = NULL;
+
+SemaphoreHandle_t xSemaphore = NULL;
+
+static void gpio_isr_handler()//(void *arg)
 {
-    uint32_t gpio_num = (uint32_t) arg;
-    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+    //uint32_t gpio_num = (uint32_t) arg;
+    //xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+	xSemaphoreGiveFromISR(xSemaphore, NULL);
 }
 
 static void gpio_task_example(void *arg)
 {
-    uint32_t io_num;
+    uint32_t io_num = 0;
 
     for (;;) {
-        if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
+        //if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
+		if (xSemaphoreTake (xSemaphore, portMAX_DELAY) == pdTRUE){
             ESP_LOGI(TAG, "GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
         }
     }
@@ -83,7 +91,7 @@ void app_main(void)
     gpio_config(&io_conf);
 
     //interrupt of rising edge
-    io_conf.intr_type = GPIO_INTR_POSEDGE;
+    io_conf.intr_type = GPIO_INTR_NEGEDGE;
     //bit mask of the pins, use GPIO4/5 here
     io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
     //set as input mode
@@ -93,10 +101,11 @@ void app_main(void)
     gpio_config(&io_conf);
 
     //change gpio intrrupt type for one pin
-    gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_ANYEDGE);
+    //gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_NEGEDGE);
 
     //create a queue to handle gpio event from isr
-    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    //gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+	xSemaphore = xSemaphoreCreateBinary();
     //start gpio task
     xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 10, NULL);
 
@@ -105,7 +114,7 @@ void app_main(void)
     //hook isr handler for specific gpio pin
     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void *) GPIO_INPUT_IO_0);
     //hook isr handler for specific gpio pin
-    gpio_isr_handler_add(GPIO_INPUT_IO_1, gpio_isr_handler, (void *) GPIO_INPUT_IO_1);
+    //gpio_isr_handler_add(GPIO_INPUT_IO_1, gpio_isr_handler, (void *) GPIO_INPUT_IO_1);
 
     //remove isr handler for gpio number.
     gpio_isr_handler_remove(GPIO_INPUT_IO_0);
@@ -118,7 +127,7 @@ void app_main(void)
         ESP_LOGI(TAG, "cnt: %d\n", cnt++);
         vTaskDelay(1000 / portTICK_RATE_MS);
         gpio_set_level(GPIO_OUTPUT_IO_0, cnt % 2);
-        gpio_set_level(GPIO_OUTPUT_IO_1, cnt % 2);
+        //gpio_set_level(GPIO_OUTPUT_IO_1, cnt % 2);
     }
 }
 
